@@ -8,6 +8,11 @@ users.id — so ot_logs stores both `user_id` (resolved via assets.allocated_to,
 may be NULL) and `holder_name` (always available) for display.
 
 Uses your existing db.py helpers directly: get_db(), log_activity().
+
+NOTE: any route that writes to activity_logs while its own `db` connection
+still has other uncommitted writes pending inserts the log directly on
+that same connection (instead of calling log_activity, which opens a
+second connection) — avoids SQLite "database is locked" errors.
 """
 
 from flask import Blueprint, jsonify, request
@@ -33,6 +38,49 @@ def _calc_overtime(due_at: str, grace_minutes: int, rate: float, cap: float):
     return ot_hours, ot_fine
 
 
+@ot_bp.route("/allocations/pending-due", methods=["GET"])
+def pending_due():
+    """Approved allocations that don't have a due date yet — feeds the
+    'set a due date' picker on the OT screen."""
+    db = get_db()
+    rows = db.execute("""
+        SELECT al.id, al.to_user, al.reason, al.created_at,
+               a.tag AS asset_tag, a.name AS asset_name
+        FROM allocations al
+        JOIN assets a ON a.id = al.asset_id
+        WHERE al.status = 'Approved' AND al.due_at IS NULL AND al.returned_at IS NULL
+        ORDER BY al.created_at DESC
+    """).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@ot_bp.route("/allocations/set-due", methods=["POST"])
+def set_due_by_body():
+    """Same as /allocations/<id>/set-due but takes allocation_id in the
+    body — convenient for a single form on the OT screen."""
+    payload = request.get_json(force=True) or {}
+    allocation_id = payload.get("allocation_id")
+    due_at = payload.get("due_at")
+    if not allocation_id or not due_at:
+        return jsonify({"error": "allocation_id and due_at are required"}), 400
+
+    db = get_db()
+    alloc = db.execute("SELECT * FROM allocations WHERE id = ?", (allocation_id,)).fetchone()
+    if not alloc:
+        db.close()
+        return jsonify({"error": "allocation not found"}), 404
+
+    db.execute("UPDATE allocations SET due_at = ? WHERE id = ?", (due_at, allocation_id))
+    db.execute(
+        "INSERT INTO activity_logs (message, category) VALUES (?, ?)",
+        (f"Due date set for allocation #{allocation_id}: {due_at}", "Transfers"),
+    )
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
+
+
 @ot_bp.route("/allocations/<int:allocation_id>/set-due", methods=["POST"])
 def set_due_date(allocation_id):
     """
@@ -54,9 +102,12 @@ def set_due_date(allocation_id):
         return jsonify({"error": "allocation not found"}), 404
 
     db.execute("UPDATE allocations SET due_at = ? WHERE id = ?", (due_at, allocation_id))
+    db.execute(
+        "INSERT INTO activity_logs (message, category) VALUES (?, ?)",
+        (f"Due date set for allocation #{allocation_id}: {due_at}", "Transfers"),
+    )
     db.commit()
     db.close()
-    log_activity(f"Due date set for allocation #{allocation_id}: {due_at}", "Transfers")
     return jsonify({"ok": True, "allocation_id": allocation_id, "due_at": due_at})
 
 
@@ -103,7 +154,10 @@ def scan_overdue():
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
             """, (row["allocation_id"], row["asset_id"], row["user_id"], row["to_user"],
                   row["due_at"], ot_hours, ot_fine))
-            log_activity(f"Overtime flagged: allocation #{row['allocation_id']} ({row['to_user']})", "Approvals")
+            db.execute(
+                "INSERT INTO activity_logs (message, category) VALUES (?, ?)",
+                (f"Overtime flagged: allocation #{row['allocation_id']} ({row['to_user']})", "Approvals"),
+            )
 
         flagged.append({"allocation_id": row["allocation_id"], "ot_hours": ot_hours, "ot_fine": ot_fine})
 
@@ -139,9 +193,12 @@ def clear_ot(ot_id):
     db.execute("UPDATE ot_logs SET status = 'CLEARED' WHERE id = ?", (ot_id,))
     db.execute("UPDATE allocations SET returned_at = ? WHERE id = ?", (now, log["allocation_id"]))
     db.execute("UPDATE assets SET status = 'Available', allocated_to = NULL WHERE id = ?", (log["asset_id"],))
+    db.execute(
+        "INSERT INTO activity_logs (message, category) VALUES (?, ?)",
+        (f"Asset returned, OT cleared (allocation #{log['allocation_id']})", "Transfers"),
+    )
     db.commit()
     db.close()
-    log_activity(f"Asset returned, OT cleared (allocation #{log['allocation_id']})", "Transfers")
     return jsonify({"ok": True})
 
 
@@ -150,9 +207,12 @@ def waive_ot(ot_id):
     """Waives the fine (manager override) without marking the asset returned."""
     db = get_db()
     db.execute("UPDATE ot_logs SET status = 'WAIVED', ot_fine = 0 WHERE id = ?", (ot_id,))
+    db.execute(
+        "INSERT INTO activity_logs (message, category) VALUES (?, ?)",
+        (f"OT fine waived (log #{ot_id})", "Approvals"),
+    )
     db.commit()
     db.close()
-    log_activity(f"OT fine waived (log #{ot_id})", "Approvals")
     return jsonify({"ok": True})
 
 
