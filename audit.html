@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AssetFlow - Audit</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell" id="shell"></div>
+
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+document.getElementById("shell").innerHTML = renderSidebar("audit") + `
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Asset Audit</h1><div class="subtitle">Audit cycle, checklist, and auto-generated discrepancy report</div></div>
+      <div class="avatar" id="topbar-avatar">..</div>
+    </div>
+
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">Start a new audit cycle</div>
+      <form id="audit-form" class="grid grid-3">
+        <div><label>Cycle name</label><input id="au-name" placeholder="Q3 audit: Engineering dept" required></div>
+        <div><label>Department</label><select id="au-dept"></select></div>
+        <div><label>Auditors</label><input id="au-auditors" placeholder="A. Rao, S. Iqbal"></div>
+        <div><label>Start date</label><input type="date" id="au-start"></div>
+        <div><label>End date</label><input type="date" id="au-end"></div>
+        <div style="align-self:end;"><button class="btn btn-primary btn-block" type="submit">Start cycle</button></div>
+      </form>
+    </div>
+
+    <label style="margin-top:22px;">Select audit cycle</label>
+    <select id="audit-picker"></select>
+
+    <div class="card" id="checklist-card" style="margin-top:16px; display:none;">
+      <div class="topbar" style="margin-bottom:10px;">
+        <div id="cycle-title" class="section-title" style="margin:0;"></div>
+        <div id="flagged-count"></div>
+      </div>
+      <table>
+        <thead><tr><th>Asset</th><th>Expected location</th><th>Verification</th></tr></thead>
+        <tbody id="audit-rows"></tbody>
+      </table>
+      <div id="close-msg"></div>
+      <button class="btn btn-danger" style="margin-top:14px;" onclick="closeCycle()">Close audit cycle</button>
+    </div>
+  </main>
+`;
+
+let currentAuditId = null, currentAuditStatus = null;
+
+async function loadDeptPicker() {
+  const depts = await api.get("/api/org/departments");
+  document.getElementById("au-dept").innerHTML = depts.map(d => `<option value="${d.id}">${d.name}</option>`).join("");
+}
+
+async function loadAuditPicker() {
+  const audits = await api.get("/api/audits");
+  document.getElementById("audit-picker").innerHTML =
+    `<option value="">Choose a cycle...</option>` +
+    audits.map(a => `<option value="${a.id}">${a.cycle_name} (${a.status})</option>`).join("");
+}
+
+function verifyBadge(v) {
+  const map = { Verified: "badge-green", Missing: "badge-red", Damaged: "badge-red", Pending: "badge-gray" };
+  return `<span class="badge ${map[v]}">${v}</span>`;
+}
+
+async function loadChecklist(auditId) {
+  currentAuditId = auditId;
+  const items = await api.get(`/api/audits/${auditId}/items`);
+  const disc = await api.get(`/api/audits/${auditId}/discrepancies`);
+
+  document.getElementById("checklist-card").style.display = "block";
+  document.getElementById("cycle-title").textContent = "Audit checklist";
+  document.getElementById("flagged-count").innerHTML =
+    `<span class="badge ${disc.flagged ? 'badge-red' : 'badge-green'}">${disc.flagged} asset(s) flagged - discrepancy report generated automatically</span>`;
+
+  document.getElementById("audit-rows").innerHTML = items.length ? items.map(i => `
+    <tr>
+      <td><span class="tag-chip">${i.tag}</span> ${i.name}</td>
+      <td>${i.expected_location || "--"}</td>
+      <td>
+        <select onchange="updateVerification(${i.id}, this.value)">
+          ${["Pending", "Verified", "Missing", "Damaged"].map(v => `<option ${v === i.verification ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+      </td>
+    </tr>`).join("") : `<tr><td colspan="3" class="empty-state">No assets snapshot for this audit.</td></tr>`;
+}
+
+async function updateVerification(itemId, verification) {
+  await api.patch(`/api/audits/items/${itemId}`, { verification });
+  toast("Verification updated");
+  loadChecklist(currentAuditId);
+}
+
+async function closeCycle() {
+  if (!currentAuditId) return;
+  await api.patch(`/api/audits/${currentAuditId}/close`);
+  toast("Audit cycle closed");
+  loadAuditPicker();
+}
+
+document.getElementById("audit-picker").addEventListener("change", (e) => {
+  if (e.target.value) loadChecklist(e.target.value);
+  else document.getElementById("checklist-card").style.display = "none";
+});
+
+document.getElementById("audit-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const res = await api.post("/api/audits", {
+      cycle_name: document.getElementById("au-name").value,
+      department_id: document.getElementById("au-dept").value,
+      auditors: document.getElementById("au-auditors").value,
+      start_date: document.getElementById("au-start").value,
+      end_date: document.getElementById("au-end").value,
+    });
+    toast("Audit cycle started");
+    e.target.reset();
+    await loadAuditPicker();
+    document.getElementById("audit-picker").value = res.audit_id;
+    loadChecklist(res.audit_id);
+  } catch (err) { toast(err.message, "error"); }
+});
+
+(async () => {
+  await requireAuth();
+  await loadDeptPicker();
+  await loadAuditPicker();
+})();
+</script>
+</body>
+</html>

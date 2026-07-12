@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AssetFlow - Activity</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell" id="shell"></div>
+
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+document.getElementById("shell").innerHTML = renderSidebar("activity") + `
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Activity Logs &amp; Notifications</h1><div class="subtitle">Every action across AssetFlow, in one feed</div></div>
+      <div class="avatar" id="topbar-avatar">..</div>
+    </div>
+
+    <div class="tabs" id="tabs">
+      ${["All", "Approvals", "Bookings", "Transfers", "Audit", "System"].map(c => `<div class="tab ${c === "All" ? "active" : ""}" data-cat="${c}">${c}</div>`).join("")}
+    </div>
+
+    <div class="card">
+      <div id="activity-feed"></div>
+    </div>
+  </main>
+`;
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    loadFeed(tab.dataset.cat);
+  });
+});
+
+async function loadFeed(category = "All") {
+  const rows = await api.get(`/api/activity?category=${category}`);
+  document.getElementById("activity-feed").innerHTML = rows.length ? rows.map(r => `
+    <div class="feed-item">
+      <div class="feed-dot"></div>
+      <div>
+        <div class="feed-text">${r.message}</div>
+        <div class="feed-time"><span class="badge badge-gray">${r.category}</span> · ${r.created_at}</div>
+      </div>
+    </div>`).join("") : `<div class="empty-state">No activity in this category yet.</div>`;
+}
+
+(async () => {
+  await requireAuth();
+  loadFeed();
+})();
+</script>
+</body>
+</html>

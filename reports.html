@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AssetFlow - Reports</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell" id="shell"></div>
+
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+document.getElementById("shell").innerHTML = renderSidebar("reports") + `
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Reports &amp; Analytics</h1><div class="subtitle">Utilization, maintenance frequency, and usage patterns - computed live from your data</div></div>
+      <div class="avatar" id="topbar-avatar">..</div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="chart-box">
+        <div class="section-title" style="margin-top:0;">Utilization by department</div>
+        <div id="util-chart"></div>
+      </div>
+      <div class="chart-box">
+        <div class="section-title" style="margin-top:0;">Maintenance frequency (top assets)</div>
+        <div id="maint-chart"></div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:16px;">
+      <div class="card">
+        <div class="section-title" style="margin-top:0;">Most used resources</div>
+        <div id="most-used-list"></div>
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin-top:0;">Idle assets</div>
+        <div id="idle-list"></div>
+      </div>
+    </div>
+
+    <button class="btn btn-outline" style="margin-top:20px;" onclick="window.print()">Export report</button>
+  </main>
+`;
+
+function bar(label, value, max) {
+  const pct = max ? Math.round((value / max) * 100) : 0;
+  return `<div class="bar-row">
+    <div class="bar-label">${label}</div>
+    <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+    <div class="bar-value">${value}</div>
+  </div>`;
+}
+
+async function loadUtilization() {
+  const rows = await api.get("/api/reports/utilization");
+  document.getElementById("util-chart").innerHTML = rows.length
+    ? rows.map(r => bar(r.department, r.utilization_pct, 100)).join("")
+    : `<div class="empty-state">No departments yet.</div>`;
+}
+
+async function loadMaintenanceFreq() {
+  const rows = await api.get("/api/reports/maintenance-frequency");
+  const max = Math.max(1, ...rows.map(r => r.ticket_count));
+  document.getElementById("maint-chart").innerHTML = rows.length
+    ? rows.map(r => bar(`${r.tag} ${r.name}`, r.ticket_count, max)).join("")
+    : `<div class="empty-state">No maintenance tickets yet.</div>`;
+}
+
+async function loadMostUsed() {
+  const rows = await api.get("/api/reports/most-used");
+  document.getElementById("most-used-list").innerHTML = rows.length ? rows.map(r => `
+    <div class="feed-item"><div class="feed-dot"></div>
+    <div><div class="feed-text">${r.resource_name}</div><div class="feed-time">${r.bookings} bookings this period</div></div></div>
+  `).join("") : `<div class="empty-state">No bookings yet.</div>`;
+}
+
+async function loadIdle() {
+  const rows = await api.get("/api/reports/idle");
+  document.getElementById("idle-list").innerHTML = rows.length ? rows.map(r => `
+    <div class="feed-item"><div class="feed-dot"></div>
+    <div><div class="feed-text"><span class="tag-chip">${r.tag}</span> ${r.name}</div><div class="feed-time">${r.location || "--"} · idle ${r.days_idle} days</div></div></div>
+  `).join("") : `<div class="empty-state">Nothing idle right now.</div>`;
+}
+
+(async () => {
+  await requireAuth();
+  loadUtilization();
+  loadMaintenanceFreq();
+  loadMostUsed();
+  loadIdle();
+})();
+</script>
+</body>
+</html>

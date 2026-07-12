@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AssetFlow - Organization setup</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell" id="shell"></div>
+
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+document.getElementById("shell").innerHTML = renderSidebar("org") + `
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Organization setup</h1>
+        <div class="subtitle">Admin only · editing a department here drives the picklist used in Assets and Reports</div>
+      </div>
+      <div class="avatar" id="topbar-avatar">..</div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="departments">Departments</div>
+      <div class="tab" data-tab="categories">Categories</div>
+      <div class="tab" data-tab="employees">Employees</div>
+    </div>
+
+    <div id="tab-departments">
+      <div class="card">
+        <div class="section-title" style="margin-top:0;">Add department</div>
+        <form id="dept-form" class="grid grid-2" style="align-items:end;">
+          <div><label>Name</label><input id="dept-name" required></div>
+          <div><label>Head</label><input id="dept-head"></div>
+          <div><label>Parent department</label><input id="dept-parent"></div>
+          <div><label>Status</label>
+            <select id="dept-status"><option>Active</option><option>Inactive</option></select>
+          </div>
+          <button class="btn btn-primary" type="submit">+ Add department</button>
+        </form>
+      </div>
+      <div class="card">
+        <table>
+          <thead><tr><th>Department</th><th>Head</th><th>Parent dept</th><th>Status</th></tr></thead>
+          <tbody id="dept-rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="tab-categories" style="display:none;">
+      <div class="card">
+        <form id="cat-form" style="display:flex; gap:10px; align-items:end;">
+          <div style="flex:1;"><label>Category name</label><input id="cat-name" required></div>
+          <button class="btn btn-primary" type="submit">+ Add</button>
+        </form>
+      </div>
+      <div class="card"><table><thead><tr><th>Category</th></tr></thead><tbody id="cat-rows"></tbody></table></div>
+    </div>
+
+    <div id="tab-employees" style="display:none;">
+      <div class="card">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th></tr></thead>
+          <tbody id="emp-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+`;
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    ["departments", "categories", "employees"].forEach(t => {
+      document.getElementById(`tab-${t}`).style.display = t === tab.dataset.tab ? "block" : "none";
+    });
+  });
+});
+
+function statusBadge(s) {
+  return `<span class="badge ${s === "Active" ? "badge-green" : "badge-gray"}">${s}</span>`;
+}
+
+async function loadDepartments() {
+  const rows = await api.get("/api/org/departments");
+  document.getElementById("dept-rows").innerHTML = rows.length ? rows.map(d => `
+    <tr><td>${d.name}</td><td>${d.head || "--"}</td><td>${d.parent_dept || "--"}</td><td>${statusBadge(d.status)}</td></tr>
+  `).join("") : `<tr><td colspan="4" class="empty-state">No departments yet.</td></tr>`;
+}
+
+async function loadCategories() {
+  const rows = await api.get("/api/org/categories");
+  document.getElementById("cat-rows").innerHTML = rows.length ? rows.map(c => `<tr><td>${c.name}</td></tr>`).join("")
+    : `<tr><td class="empty-state">No categories yet.</td></tr>`;
+}
+
+async function loadEmployees() {
+  const rows = await api.get("/api/org/employees");
+  document.getElementById("emp-rows").innerHTML = rows.length ? rows.map(e => `
+    <tr><td>${e.name}</td><td>${e.email}</td>
+    <td><span class="badge ${e.role === 'admin' ? 'badge-amber' : 'badge-gray'}">${e.role}</span></td>
+    <td>${e.department || "--"}</td></tr>
+  `).join("") : `<tr><td colspan="4" class="empty-state">No employees yet.</td></tr>`;
+}
+
+document.getElementById("dept-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api.post("/api/org/departments", {
+      name: document.getElementById("dept-name").value,
+      head: document.getElementById("dept-head").value,
+      parent_dept: document.getElementById("dept-parent").value,
+      status: document.getElementById("dept-status").value,
+    });
+    e.target.reset();
+    toast("Department added");
+    loadDepartments();
+  } catch (err) { toast(err.message, "error"); }
+});
+
+document.getElementById("cat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api.post("/api/org/categories", { name: document.getElementById("cat-name").value });
+    e.target.reset();
+    toast("Category added");
+    loadCategories();
+  } catch (err) { toast(err.message, "error"); }
+});
+
+(async () => {
+  await requireAuth();
+  loadDepartments();
+  loadCategories();
+  loadEmployees();
+})();
+</script>
+</body>
+</html>

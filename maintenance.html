@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AssetFlow - Maintenance</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell" id="shell"></div>
+
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+document.getElementById("shell").innerHTML = renderSidebar("maintenance") + `
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Maintenance Management</h1>
+        <div class="subtitle">Approving a card moves the asset to Under maintenance · resolving returns it to Available</div></div>
+      <div class="avatar" id="topbar-avatar">..</div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;">
+      <div class="section-title" style="margin-top:0;">Raise a maintenance request</div>
+      <form id="ticket-form" class="grid grid-3">
+        <div><label>Asset</label><select id="t-asset"></select></div>
+        <div style="grid-column: span 2;"><label>Issue</label><input id="t-issue" placeholder="e.g. Projector bulb not turning on" required></div>
+        <div><button class="btn btn-primary" type="submit">Raise request</button></div>
+      </form>
+    </div>
+
+    <div class="kanban" id="board"></div>
+  </main>
+`;
+
+const COLUMNS = ["Pending", "Approved", "In Progress", "Resolved"];
+const NEXT = { "Pending": "Approved", "Approved": "In Progress", "In Progress": "Resolved" };
+
+async function loadAssetPicker() {
+  const assets = await api.get("/api/assets");
+  document.getElementById("t-asset").innerHTML = assets.map(a => `<option value="${a.id}">${a.tag} - ${a.name}</option>`).join("");
+}
+
+async function loadBoard() {
+  const board = await api.get("/api/maintenance");
+  document.getElementById("board").innerHTML = COLUMNS.map(col => `
+    <div class="kanban-col">
+      <h3>${col} (${board[col].length})</h3>
+      ${board[col].map(card => `
+        <div class="kanban-card">
+          <span class="tag-chip">${card.tag}</span>
+          <div class="issue">${card.issue}</div>
+          ${card.technician ? `<div class="feed-time">Technician: ${card.technician}</div>` : ""}
+          <div class="move-actions">
+            ${NEXT[col] ? `<button class="btn btn-outline btn-sm" onclick="moveCard(${card.id}, '${NEXT[col]}')">Move to ${NEXT[col]} →</button>` : `<span class="badge badge-green">Done</span>`}
+          </div>
+        </div>
+      `).join("") || `<div class="empty-state">Nothing here.</div>`}
+    </div>
+  `).join("");
+}
+
+async function moveCard(id, status) {
+  try {
+    await api.patch(`/api/maintenance/${id}/move`, { status });
+    toast(`Moved to ${status}`);
+    loadBoard();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+document.getElementById("ticket-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api.post("/api/maintenance", {
+      asset_id: document.getElementById("t-asset").value,
+      issue: document.getElementById("t-issue").value,
+    });
+    toast("Ticket raised");
+    e.target.reset();
+    loadBoard();
+  } catch (err) { toast(err.message, "error"); }
+});
+
+(async () => {
+  await requireAuth();
+  await loadAssetPicker();
+  loadBoard();
+})();
+</script>
+</body>
+</html>
