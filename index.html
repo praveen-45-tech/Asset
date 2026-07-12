@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AssetFlow - Log in</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-logo">AF</div>
+    <h1 id="form-title">Welcome back</h1>
+    <p class="tagline" id="form-sub">Log in to manage your organization's assets</p>
+
+    <div id="alert-box"></div>
+
+    <!-- LOGIN FORM -->
+    <form id="login-form">
+      <label for="login-email">Email</label>
+      <input type="email" id="login-email" placeholder="name@company.com" required>
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" placeholder="••••••••••" required>
+      <button type="submit" class="btn btn-primary btn-block" style="margin-top:22px;">Log in</button>
+    </form>
+
+    <!-- SIGNUP FORM (hidden by default) -->
+    <form id="signup-form" style="display:none;">
+      <label for="signup-name">Full name</label>
+      <input type="text" id="signup-name" placeholder="Priya Shah" required>
+      <label for="signup-email">Email</label>
+      <input type="email" id="signup-email" placeholder="name@company.com" required>
+      <label for="signup-password">Password</label>
+      <input type="password" id="signup-password" placeholder="Create a password" required>
+      <p class="hint">Sign up creates an employee account - admin roles are assigned later by an organization admin.</p>
+      <button type="submit" class="btn btn-primary btn-block" style="margin-top:8px;">Create account</button>
+    </form>
+
+    <div class="auth-toggle">
+      <span id="toggle-text">New here?</span>
+      <a id="toggle-link" onclick="toggleMode()">Create an account</a>
+    </div>
+
+    <p class="hint" style="text-align:center; margin-top:18px;">
+      Demo login: admin@company.com / admin123
+    </p>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+let mode = "login";
+
+function toggleMode() {
+  mode = mode === "login" ? "signup" : "login";
+  document.getElementById("login-form").style.display = mode === "login" ? "block" : "none";
+  document.getElementById("signup-form").style.display = mode === "signup" ? "block" : "none";
+  document.getElementById("form-title").textContent = mode === "login" ? "Welcome back" : "Create your account";
+  document.getElementById("form-sub").textContent = mode === "login"
+    ? "Log in to manage your organization's assets"
+    : "Set up access in under a minute";
+  document.getElementById("toggle-text").textContent = mode === "login" ? "New here?" : "Already have an account?";
+  document.getElementById("toggle-link").textContent = mode === "login" ? "Create an account" : "Log in";
+  document.getElementById("alert-box").innerHTML = "";
+}
+
+function showError(msg) {
+  document.getElementById("alert-box").innerHTML = `<div class="alert alert-danger">${msg}</div>`;
+}
+
+// Already logged in? Skip straight to dashboard.
+api.get("/api/auth/me").then(() => { window.location.href = "dashboard.html"; }).catch(() => {});
+
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api.post("/api/auth/login", {
+      email: document.getElementById("login-email").value,
+      password: document.getElementById("login-password").value,
+    });
+    window.location.href = "dashboard.html";
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+document.getElementById("signup-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api.post("/api/auth/signup", {
+      name: document.getElementById("signup-name").value,
+      email: document.getElementById("signup-email").value,
+      password: document.getElementById("signup-password").value,
+    });
+    window.location.href = "dashboard.html";
+  } catch (err) {
+    showError(err.message);
+  }
+});
+</script>
+</body>
+</html>

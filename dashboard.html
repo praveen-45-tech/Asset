@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AssetFlow - Dashboard</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell" id="shell"></div>
+
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+document.getElementById("shell").innerHTML = renderSidebar("dashboard") + `
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Today's Overview</h1>
+        <div class="subtitle">Live snapshot of everything moving through AssetFlow</div>
+      </div>
+      <div class="avatar" id="topbar-avatar">..</div>
+    </div>
+
+    <div id="overdue-alert"></div>
+
+    <div class="grid grid-3" id="stat-cards"></div>
+
+    <div class="section-title">Quick actions</div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <a class="btn btn-primary" href="assets.html">+ Register asset</a>
+      <a class="btn btn-outline" href="booking.html">Book resource</a>
+      <a class="btn btn-outline" href="maintenance.html">Raise request</a>
+    </div>
+
+    <div class="section-title">Recent activity</div>
+    <div class="card" id="recent-activity"><div class="empty-state">Loading...</div></div>
+  </main>
+`;
+
+async function load() {
+  await requireAuth();
+  const data = await api.get("/api/dashboard/overview");
+
+  document.getElementById("stat-cards").innerHTML = `
+    <div class="stat-card"><div class="stat-label">Available</div><div class="stat-value">${data.available}</div></div>
+    <div class="stat-card"><div class="stat-label">Allocated</div><div class="stat-value">${data.allocated}</div></div>
+    <div class="stat-card"><div class="stat-label">Under maintenance</div><div class="stat-value">${data.maintenance_flagged}</div></div>
+    <div class="stat-card"><div class="stat-label">Active bookings</div><div class="stat-value">${data.active_bookings}</div></div>
+    <div class="stat-card"><div class="stat-label">Pending transfers</div><div class="stat-value">${data.pending_transfers}</div></div>
+    <div class="stat-card"><div class="stat-label">Upcoming returns</div><div class="stat-value">${data.upcoming_returns}</div></div>
+  `;
+
+  if (data.overdue_assets.length) {
+    document.getElementById("overdue-alert").innerHTML = `
+      <div class="alert alert-danger">
+        ${data.overdue_assets.length} asset(s) overdue for return - flagged for follow-up:
+        ${data.overdue_assets.map(a => `<span class="tag-chip" style="margin-left:6px;">${a.tag}</span>`).join("")}
+      </div>`;
+  }
+
+  const feed = document.getElementById("recent-activity");
+  if (!data.recent_activity.length) {
+    feed.innerHTML = `<div class="empty-state">Nothing has happened yet - actions across AssetFlow will show up here.</div>`;
+  } else {
+    feed.innerHTML = data.recent_activity.map(a => `
+      <div class="feed-item">
+        <div class="feed-dot"></div>
+        <div>
+          <div class="feed-text">${a.message}</div>
+          <div class="feed-time">${a.category} · ${a.created_at}</div>
+        </div>
+      </div>`).join("");
+  }
+}
+load();
+</script>
+</body>
+</html>
